@@ -1,89 +1,58 @@
 package registry
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"net/http"
-	"time"
+	"os"
+	"strings"
 
 	"github.com/ginger-core/errors"
 )
 
-type git struct {
-	*base
-	baseUrl string
-	path    string
-	ref     string
-	token   string
+var readerMap = map[string]func(base *base) reader{
+	"gitlab": newGitlabReader,
+	"github": newGithubReader,
 }
 
-func newGit(ctx context.Context, format string, args ...interface{}) (Registry, errors.Error) {
-	if len(args) < 4 {
-		return nil, errors.Internal().
-			WithContext(ctx).
-			WithId("newGit.arg").
-			WithMessage("invalid arguments")
-	}
+type git struct {
+	*base
+	reader
+}
 
+type reader interface {
+	read() errors.Error
+}
+
+func newGit(_ context.Context, format string) (Registry, errors.Error) {
 	c := &git{
-		base:    _new(format),
-		baseUrl: args[0].(string),
-		path:    args[1].(string),
-		ref:     args[2].(string),
-		token:   args[3].(string),
+		base: _new(format),
+	}
+	url := os.Getenv("CONFIG_URL")
+	if url == "" {
+		return nil, errors.Validation().
+			WithTrace("InvalidConfigUrl").
+			WithMessage("Config url environment is empty." +
+				" Set environment vartiale of key `CONFIG_URL` to your config url path")
+	}
+	remoteType := os.Getenv("CONFIG_REMOTE_TYPE")
+	switch strings.ToUpper(remoteType) {
+	case "GITHUB":
+		c.reader = newGithubReader(c.base)
+	case "GITLAB":
+		c.reader = newGitlabReader(c.base)
+	default:
+		switch {
+		case strings.Contains(url, "github"):
+			c.reader = newGithubReader(c.base)
+		case strings.Contains(url, "gitlab"):
+			c.reader = newGitlabReader(c.base)
+		default:
+			return nil, errors.Validation().
+				WithTrace("RemoteTypeNotFound").
+				WithMessage("config remote type not found")
+		}
 	}
 	if err := c.read(); err != nil {
 		return nil, err
 	}
 	return c, nil
-}
-
-type remoteResponse struct {
-	Content string `json:"content"`
-}
-
-func (c *git) read() errors.Error {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s?ref=%s", c.baseUrl, c.path, c.ref), nil)
-	if err != nil {
-		return errors.New(err)
-	}
-	req.Header.Set("PRIVATE-TOKEN", c.token)
-	client := &http.Client{Timeout: time.Second * 5}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return errors.New(err)
-	}
-	defer resp.Body.Close()
-
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return errors.New(err)
-	}
-
-	if resp.StatusCode != 200 {
-		return errors.New().
-			WithMessage(fmt.Sprintf("config server returned unexpected status %s. "+
-				"err %v", resp.Status, string(data)))
-	}
-
-	respBody := new(remoteResponse)
-	if err := json.Unmarshal(data, respBody); err != nil {
-		return errors.New(err)
-	}
-
-	data, err = base64.StdEncoding.DecodeString(respBody.Content)
-	if err != nil {
-		return errors.New(err)
-	}
-
-	err = c.viper.ReadConfig(bytes.NewBuffer(data))
-	if err != nil {
-		return errors.New(err)
-	}
-	return nil
 }

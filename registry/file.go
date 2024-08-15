@@ -13,18 +13,20 @@ type file struct {
 }
 
 func newFile(ctx context.Context, format string, args ...interface{}) (Registry, errors.Error) {
+	var filePath string
 	if len(args) == 0 {
-		return nil, errors.Internal().
-			WithContext(ctx).
-			WithTrace("noPath").
-			WithMessage("file path not given")
+		//
+		filePath = os.Getenv("CONFIG_PATH")
+		if filePath == "" {
+			filePath = "./config.yaml"
+		}
+	} else if path, ok := args[0].(string); ok {
+		filePath = path
 	}
-
 	var reader io.Reader
 	var err error
-
-	if path, ok := args[0].(string); ok {
-		reader, err = os.Open(path)
+	if filePath != "" {
+		reader, err = os.Open(filePath)
 		if err != nil {
 			return nil, errors.Internal(err).
 				WithContext(ctx).

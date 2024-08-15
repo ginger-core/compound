@@ -2,21 +2,37 @@ package registry
 
 import (
 	"context"
+	"os"
 
 	"github.com/ginger-core/errors"
 )
 
-func New(ctx context.Context, t Type, format string, args ...interface{}) (Registry, errors.Error) {
-	switch t {
+func New(ctx context.Context) (Registry, errors.Error) {
+	format := os.Getenv("CONFIG_FORMAT")
+	if format == "" {
+		format = "yaml"
+	}
+	configTypeStr := os.Getenv("CONFIG_TYPE")
+	var configType Type
+	switch configTypeStr {
+	case "FILE", "":
+		configType = TypeFile
+	case "GIT", "REMOTE":
+		configType = TypeRemote
+	default:
+		panic("invalid config type")
+	}
+	//
+	switch configType {
 	case TypeFile:
-		c, err := newFile(ctx, format, args...)
+		c, err := newFile(ctx, format)
 		if err != nil {
 			return nil, err.
 				WithTrace("newFile")
 		}
 		return c, nil
-	case TypeGitAPI:
-		c, err := newGit(ctx, format, args...)
+	case TypeRemote:
+		c, err := newGit(ctx, format)
 		if err != nil {
 			return nil, err.
 				WithTrace("newGit")
