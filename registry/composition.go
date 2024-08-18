@@ -7,7 +7,7 @@ import (
 	"github.com/ginger-core/errors"
 )
 
-func New(ctx context.Context) (Registry, errors.Error) {
+func New(ctx context.Context, args ...any) (Registry, errors.Error) {
 	format := os.Getenv("CONFIG_FORMAT")
 	if format == "" {
 		format = "yaml"
@@ -25,7 +25,7 @@ func New(ctx context.Context) (Registry, errors.Error) {
 	//
 	switch configType {
 	case TypeFile:
-		c, err := newFile(ctx, format)
+		c, err := newFile(ctx, format, args...)
 		if err != nil {
 			return nil, err.
 				WithTrace("newFile")
